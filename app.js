@@ -2,10 +2,13 @@
 const SUPABASE_URL = 'https://scduywpwiqeaimmmevyn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
+
 (function () {
   'use strict';
 
-  /* ---------- Supabase client ---------- */
+  /* =========================================================
+     ۱. آماده‌سازی کلاینت Supabase
+     ========================================================= */
   const SupabaseLib = window.supabase;
   if (!SupabaseLib) {
     document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif">خطا: کتابخانه Supabase لود نشد. اتصال اینترنت را بررسی کنید.</div>';
@@ -20,7 +23,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   });
 
-  /* ---------- State ---------- */
+  /* =========================================================
+     ۲. State — تمام وضعیت برنامه در یک آبجکت
+     ========================================================= */
   const state = {
     user: null,
     householdId: null,
@@ -29,11 +34,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     transactions: [],
     shoppingList: [],
     budget: 0,
+    messages: [],           // ← جدید: پیام‌های چت
+    chatUnread: 0,          // ← جدید: تعداد پیام‌های خوانده‌نشده
     realtimeChannel: null,
     authMode: 'login'
   };
 
-  /* ---------- Jalali date ---------- */
+  /* =========================================================
+     ۳. توابع تاریخ شمسی
+     ========================================================= */
   const PMONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
   function toJalali(gy, gm, gd) {
     const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
@@ -55,7 +64,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   const jKey = iso => { const [y,m] = jalaliOf(iso); return y + '-' + m; };
   const todayJ = () => { const n = new Date(); return toJalali(n.getFullYear(), n.getMonth()+1, n.getDate()); };
 
-  /* ---------- Helpers ---------- */
+  /* =========================================================
+     ۴. کمکی‌ها
+     ========================================================= */
   const $ = id => document.getElementById(id);
   const fmt = n => new Intl.NumberFormat('fa-IR').format(Math.round(n || 0));
   const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,14 +84,18 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   function findCat(type, id){ return (state.config.categories[type] || []).find(c => c.id === id); }
   function findMember(id){ return state.config.members.find(m => m.id === id); }
 
-  /* ---------- Views ---------- */
+  /* =========================================================
+     ۵. مدیریت Views (صفحه‌های اصلی)
+     ========================================================= */
   const views = ['loadingView','loginView','appView'];
   function showView(name){
     views.forEach(v => { const el = $(v); if (el) el.style.display = 'none'; });
     const el = $(name); if (el) el.style.display = 'flex';
   }
 
-  /* ---------- Auth ---------- */
+  /* =========================================================
+     ۶. احراز هویت (ورود/ثبت‌نام)
+     ========================================================= */
   function setAuthMode(mode){
     state.authMode = mode;
     $('tabLogin').classList.toggle('active', mode === 'login');
@@ -89,6 +104,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('authError').textContent = '';
   }
 
+  // ترجمه خطاهای Supabase به فارسی
   function translateAuthError(msg){
     if (msg.includes('Invalid login credentials')) return 'ایمیل یا رمز عبور اشتباه است';
     if (msg.includes('User already registered')) return 'این ایمیل قبلاً ثبت‌نام کرده';
@@ -136,14 +152,18 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (state.realtimeChannel) { await supabase.removeChannel(state.realtimeChannel); state.realtimeChannel = null; }
     await supabase.auth.signOut();
     state.user = null; state.householdId = null;
+    state.messages = []; state.chatUnread = 0;
     showView('loginView');
   }
 
-  /* ---------- After login ---------- */
+  /* =========================================================
+     ۷. چرخه پس از ورود
+     ========================================================= */
   async function afterLogin(){
     showView('loadingView');
     await loadHousehold();
     await refreshAll();
+    await refreshChat();   // ← بارگذاری پیام‌های چت
     subscribeRealtime();
     showView('appView');
 
@@ -155,8 +175,11 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     renderAll(); renderSettings();
   }
 
-  /* ---------- Household ---------- */
+  /* =========================================================
+     ۸. خانوار — ساخت با RPC یا بارگذاری موجود
+     ========================================================= */
   async function loadHousehold(){
+    // بررسی اینکه کاربر عضو خانوار هست یا نه
     const { data: memberships, error } = await supabase
       .from('household_members').select('household_id')
       .eq('user_id', state.user.id)
@@ -168,6 +191,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (memberships && memberships.length > 0) {
       state.householdId = memberships[0].household_id;
     } else {
+      // ساخت خانوار جدید از طریق RPC (دور زدن RLS برای RETURNING)
       const defaultConfig = {
         members: [{ id: 'm1', name: (state.user.email || 'من').split('@')[0] }],
         categories: {
@@ -215,6 +239,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       return;
     }
 
+    // بارگذاری تنظیمات خانوار موجود
     const { data: hh, error: hhErr } = await supabase.from('households')
       .select('config, share_code').eq('id', state.householdId).single();
     if (hhErr) { toast('خطا: ' + hhErr.message); return; }
@@ -222,7 +247,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     state.config = hh.config || { members: [{ id: 'm1', name: 'من' }], categories: { expense: [], income: [] } };
   }
 
-  /* ---------- Data loaders ---------- */
+  /* =========================================================
+     ۹. بارگذاری داده‌ها (تراکنش، خرید، بودجه، چت)
+     ========================================================= */
   async function refreshTransactions(){
     if (!state.householdId) return;
     const { data, error } = await supabase.from('transactions').select('*')
@@ -235,6 +262,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       note: t.note || '', created: new Date(t.created_at).getTime()
     }));
   }
+
   async function refreshShopping(){
     if (!state.householdId) return;
     const { data, error } = await supabase.from('shopping_list').select('*')
@@ -249,6 +277,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       createdAt: new Date(s.created_at).getTime()
     }));
   }
+
   async function refreshBudget(){
     if (!state.householdId) return;
     const [jy, jm] = todayJ();
@@ -256,12 +285,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       .eq('household_id', state.householdId).eq('month', `${jy}-${p2(jm)}`).maybeSingle();
     state.budget = data ? Number(data.amount) : 0;
   }
+
   async function refreshAll(){
     await Promise.all([refreshTransactions(), refreshShopping(), refreshBudget()]);
     renderAll(); renderSettings(); renderShopping();
   }
 
-  /* ---------- Realtime ---------- */
+  /* =========================================================
+     ۱۰. Realtime — اشتراک در تغییرات همه جداول
+     ========================================================= */
   function subscribeRealtime(){
     if (!state.householdId) return;
     if (state.realtimeChannel) supabase.removeChannel(state.realtimeChannel);
@@ -272,10 +304,31 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
           async () => { await refreshShopping(); renderShopping(); renderHome(); })
       .on('postgres_changes', { event:'*', schema:'public', table:'budgets', filter:`household_id=eq.${state.householdId}` },
           async () => { await refreshBudget(); renderHome(); })
+      // ← اشتراک چت
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'chat_messages', filter:`household_id=eq.${state.householdId}` },
+          async (payload) => {
+            console.log('[CHAT] New message:', payload);
+            await refreshChat();
+
+            // اگر چت باز است → رفرش کن
+            if ($('chatModal') && $('chatModal').classList.contains('open')) {
+              renderChat();
+              state.chatUnread = 0;
+            } else if (payload.new && payload.new.user_id !== state.user.id) {
+              // چت بسته → badge + toast
+              state.chatUnread++;
+              updateChatBadge();
+              const preview = payload.new.message || '📷 عکس';
+              const short = preview.length > 30 ? preview.slice(0,30) + '…' : preview;
+              toast(`${payload.new.sender_name}: ${short}`);
+            }
+          })
       .subscribe();
   }
 
-  /* ---------- Navigation & theme ---------- */
+  /* =========================================================
+     ۱۱. ناوبری و تم
+     ========================================================= */
   function go(name){
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     $('screen-' + name).classList.add('active');
@@ -286,11 +339,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (name === 'settings') renderSettings();
     if (name === 'shopping') renderShopping();
   }
+
   function toggleTheme(){
     const isDark = document.body.classList.toggle('dark');
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
     $('themeBtn').textContent = isDark ? '☀️' : '🌙';
   }
+
   function applyTheme(){
     if (localStorage.getItem('theme') === 'dark') {
       document.body.classList.add('dark');
@@ -298,7 +353,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   }
 
-  /* ---------- Home render ---------- */
+  /* =========================================================
+     ۱۲. رندر صفحه اصلی
+     ========================================================= */
   function renderHome(){
     const [tjy, tjm] = todayJ(); const tk = tjy + '-' + tjm;
     let balance = 0, mIncome = 0, mExpense = 0;
@@ -314,6 +371,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('mIncome').textContent = fmt(mIncome);
     $('mExpense').textContent = fmt(mExpense);
 
+    // بودجه
     if (state.budget > 0) {
       $('budgetCard').style.display = '';
       const pct = Math.min(100, (mExpense/state.budget)*100);
@@ -324,6 +382,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       $('budgetPct').textContent = Math.round(pct) + '٪';
     } else $('budgetCard').style.display = 'none';
 
+    // پیش‌نمایش لیست خرید
     const shopPending = state.shoppingList.filter(i => !i.done);
     if (shopPending.length) {
       $('shopHomeCard').style.display = '';
@@ -335,6 +394,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         </div>`).join('');
     } else $('shopHomeCard').style.display = 'none';
 
+    // نمودار دسته‌بندی
     const entries = Object.entries(catTotals).sort((a,b) => b[1]-a[1]).slice(0,6);
     const maxCat = entries.length ? entries[0][1] : 1;
     $('catChart').innerHTML = entries.length
@@ -347,6 +407,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         }).join('')
       : `<div class="empty"><span class="em">📊</span>هنوز هزینه‌ای ثبت نشده</div>`;
 
+    // آخرین تراکنش‌ها
     const recent = [...state.transactions].sort((a,b) => b.date.localeCompare(a.date) || b.created - a.created).slice(0,5);
     $('recentList').innerHTML = recent.length
       ? recent.map(t => txRowHTML(t, false)).join('')
@@ -365,7 +426,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     </div>`;
   }
 
-  /* ---------- Transactions ---------- */
+  /* =========================================================
+     ۱۳. تراکنش‌ها
+     ========================================================= */
   let txTypeFilter = 'all', txMonthFilter = 'all';
   function setTxFilter(f){ txTypeFilter = f; document.querySelectorAll('#typeFilters .chip').forEach(c => c.classList.toggle('active', c.dataset.f===f)); renderTx(); }
   function setMonthFilter(k){ txMonthFilter = k; renderTx(); }
@@ -382,6 +445,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
     $('monthFilters').innerHTML = opts.join('');
   }
+
   function renderTx(){
     buildMonthFilters();
     let list = [...state.transactions];
@@ -393,6 +457,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       ? list.map(t => txRowHTML(t, true)).join('')
       : `<div class="empty"><span class="em">🔍</span>تراکنشی پیدا نشد</div>`;
   }
+
   async function delTx(id){
     if (!confirm('این تراکنش حذف شود؟')) return;
     const { error } = await supabase.from('transactions').delete().eq('id', id);
@@ -400,7 +465,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     await refreshTransactions(); renderAll(); toast('حذف شد');
   }
 
-  /* ---------- Shopping ---------- */
+  /* =========================================================
+     ۱۴. لیست خرید
+     ========================================================= */
   function renderShopping(){
     const list = state.shoppingList;
     const pending = list.filter(i => !i.done), done = list.filter(i => i.done);
@@ -476,11 +543,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (error) return toast('خطا: ' + error.message);
     await refreshShopping(); renderShopping(); renderHome();
   }
+
   async function delShopItem(id){
     const { error } = await supabase.from('shopping_list').delete().eq('id', id);
     if (error) return toast('خطا: ' + error.message);
     await refreshShopping(); renderShopping(); renderHome();
   }
+
   async function editShopPrice(id){
     const item = state.shoppingList.find(i => i.id === id);
     if (!item) return;
@@ -491,6 +560,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (error) return toast('خطا: ' + error.message);
     await refreshShopping(); renderShopping();
   }
+
   async function clearDoneShopping(){
     const done = state.shoppingList.filter(i => i.done);
     if (!done.length) return toast('خریداری‌شده‌ای نیست');
@@ -500,6 +570,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (error) return toast('خطا: ' + error.message);
     await refreshShopping(); renderShopping(); renderHome(); toast('پاک شد');
   }
+
   async function clearAllShopping(){
     if (!state.shoppingList.length) return toast('لیست خالی است');
     if (!confirm('کل لیست پاک شود؟')) return;
@@ -507,6 +578,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (error) return toast('خطا: ' + error.message);
     await refreshShopping(); renderShopping(); renderHome(); toast('پاک شد');
   }
+
   async function shoppingToExpense(){
     const done = state.shoppingList.filter(i => i.done && (i.price||0) > 0);
     if (!done.length) return toast('کالای خریداری‌شده با قیمت نیست');
@@ -526,7 +598,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     toast(`${fmt(total)} تومان ثبت شد ✓`);
   }
 
-  /* ---------- Report ---------- */
+  /* =========================================================
+     ۱۵. گزارش
+     ========================================================= */
   function renderReport(){
     const now = new Date();
     let [tjy, tjm] = toJalali(now.getFullYear(), now.getMonth()+1, now.getDate());
@@ -585,7 +659,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       : `<div class="empty"><span class="em">👨‍👩‍👧</span>داده‌ای نیست</div>`;
   }
 
-  /* ---------- Settings ---------- */
+  /* =========================================================
+     ۱۶. تنظیمات
+     ========================================================= */
   function renderSettings(){
     $('shareCodeDisplay').value = state.shareCode || '-----';
     const bi = $('budgetInput');
@@ -601,10 +677,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('expCatList').innerHTML = catHTML('expense');
     $('incCatList').innerHTML = catHTML('income');
   }
+
   async function saveConfigToCloud(){
     const { error } = await supabase.from('households').update({ config: state.config }).eq('id', state.householdId);
     if (error) toast('خطا در ذخیره: ' + error.message);
   }
+
   async function saveBudget(){
     const v = parseInt(onlyDigits($('budgetInput').value),10) || 0;
     if (v <= 0) return toast('مبلغ بودجه را وارد کنید');
@@ -615,6 +693,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (error) return toast('خطا: ' + error.message);
     state.budget = v; renderHome(); toast('بودجه ثبت شد');
   }
+
   async function addMember(){
     const inp = $('newMember'); const name = inp.value.trim();
     if (!name) return toast('نام را وارد کنید');
@@ -622,12 +701,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     inp.value = '';
     await saveConfigToCloud(); renderSettings(); renderAll(); toast('اضافه شد');
   }
+
   async function delMember(id){
     if (state.config.members.length <= 1) return;
     if (!confirm('این عضو حذف شود؟')) return;
     state.config.members = state.config.members.filter(m => m.id !== id);
     await saveConfigToCloud(); renderSettings(); renderAll();
   }
+
   async function addCat(type){
     const isExp = type === 'expense';
     const nameInp = $(isExp?'newExpCat':'newIncCat');
@@ -638,13 +719,16 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     nameInp.value = ''; emInp.value = '';
     await saveConfigToCloud(); renderSettings(); renderAll(); toast('اضافه شد');
   }
+
   async function delCat(type, id){
     if (!confirm('این دسته حذف شود؟')) return;
     state.config.categories[type] = state.config.categories[type].filter(c => c.id !== id);
     await saveConfigToCloud(); renderSettings(); renderAll();
   }
 
-  /* ---------- Share code & join ---------- */
+  /* =========================================================
+     ۱۷. کد اشتراک و پیوستن به خانوار
+     ========================================================= */
   async function copyShareCode(){
     try { await navigator.clipboard.writeText(state.shareCode); toast('کد کپی شد ✓'); }
     catch {
@@ -653,6 +737,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   }
 
+  // پیوستن با کد — مستقیماً state.householdId را از RPC تنظیم می‌کند
   async function joinHousehold(){
     const code = $('joinCodeInput').value.trim().toUpperCase();
     if (!code) return toast('کد را وارد کنید');
@@ -684,13 +769,256 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
     // رفرش داده‌ها با householdId جدید
     await refreshAll();
+    await refreshChat();
     if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel);
     subscribeRealtime();
     renderAll(); renderSettings(); renderShopping();
     toast('پیوستید ✓');
   }
 
-  /* ---------- Tx modal ---------- */
+  /* =========================================================
+     ۱۸. چت — بارگذاری، رندر، ارسال، آپلود عکس
+     ========================================================= */
+
+  // فرمت ساعت پیام (۱۴:۳۰)
+  function formatChatTime(iso) {
+    const d = new Date(iso);
+    return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  }
+
+  // فرمت تاریخ پیام (امروز / دیروز / تاریخ شمسی)
+  function formatChatDate(iso) {
+    const n = new Date();
+    const msgDate = isoOf(new Date(iso));
+    const today = isoOf(n);
+    const yd = new Date(n); yd.setDate(yd.getDate() - 1);
+    if (msgDate === today) return 'امروز';
+    if (msgDate === isoOf(yd)) return 'دیروز';
+    return fmtJalali(msgDate);
+  }
+
+  // بارگذاری ۳۰۰ پیام آخر از Supabase
+  async function refreshChat() {
+    if (!state.householdId) return;
+    const { data, error } = await supabase.from('chat_messages').select('*')
+      .eq('household_id', state.householdId)
+      .order('created_at', { ascending: true })
+      .limit(300);
+    if (error) { console.error(error); return; }
+    state.messages = (data || []).map(m => ({
+      id: m.id,
+      userId: m.user_id,
+      senderName: m.sender_name,
+      message: m.message || '',
+      attachmentUrl: m.attachment_url || null,
+      attachmentType: m.attachment_type || null,
+      createdAt: m.created_at,
+      time: new Date(m.created_at).getTime()
+    }));
+  }
+
+  // رندر پیام‌ها با پشتیبانی از عکس
+  function renderChat() {
+    const container = $('chatMessages');
+    if (!container) return;
+    const list = state.messages || [];
+    if (!list.length) {
+      container.innerHTML = `<div class="empty"><span class="em">💬</span>هنوز پیامی نیست<br><small>اولین پیام را بفرستید</small></div>`;
+      return;
+    }
+    let html = '';
+    let lastDate = '';
+    list.forEach(m => {
+      // جداکننده تاریخ
+      const msgDate = isoOf(new Date(m.createdAt));
+      if (msgDate !== lastDate) {
+        html += `<div class="chat-date-sep">${formatChatDate(m.createdAt)}</div>`;
+        lastDate = msgDate;
+      }
+
+      const isOwn = m.userId === state.user.id;
+
+      // محتوای حباب: اگر عکس دارد، عکس + متن (اختیاری)
+      let bubbleContent = '';
+      if (m.attachmentUrl) {
+        bubbleContent += `<img src="${esc(m.attachmentUrl)}" loading="lazy" alt="عکس" onclick="app.openLightbox(this.src)">`;
+      }
+      if (m.message) {
+        bubbleContent += m.attachmentUrl
+          ? `<div style="margin-top:6px">${esc(m.message)}</div>`
+          : esc(m.message);
+      }
+      if (!bubbleContent) bubbleContent = '—';
+
+      html += `<div class="msg ${isOwn ? 'own' : 'other'}">
+        ${!isOwn ? `<div class="msg-sender">${esc(m.senderName)}</div>` : ''}
+        <div class="msg-bubble">${bubbleContent}</div>
+        <div class="msg-time">${formatChatTime(m.createdAt)}</div>
+      </div>`;
+    });
+    container.innerHTML = html;
+    // اسکرول به انتها
+    requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+  }
+
+  // ارسال پیام متنی
+  async function sendChatMessage() {
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    if (!state.householdId) return toast('خانوار بارگذاری نشده');
+
+    const senderName = (state.user.email || 'کاربر').split('@')[0];
+    input.value = '';
+    input.style.height = 'auto';
+
+    const { error } = await supabase.from('chat_messages').insert({
+      household_id: state.householdId,
+      user_id: state.user.id,
+      sender_name: senderName,
+      message: text
+    });
+
+    if (error) {
+      toast('خطا: ' + error.message);
+      input.value = text;
+      return;
+    }
+
+    await refreshChat();
+    renderChat();
+    state.chatUnread = 0;
+    updateChatBadge();
+  }
+
+  // آپلود عکس — Edge Function → presigned URL → ArvanCloud
+  async function uploadChatImage(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('فقط عکس مجاز است');
+    if (file.size > 5 * 1024 * 1024) return toast('حجم عکس باید کمتر از ۵ مگابایت باشد');
+    if (!state.householdId) return toast('خانوار بارگذاری نشده');
+
+    const input = $('chatInput');
+    const caption = input.value.trim();
+    const sendBtn = $('chatSendBtn');
+    const attachBtn = document.querySelector('.chat-attach-btn');
+
+    // غیرفعال کردن دکمه‌ها در حین آپلود
+    sendBtn.disabled = true;
+    if (attachBtn) attachBtn.disabled = true;
+    toast('در حال آپلود عکس...');
+
+    try {
+      // ۱. گرفتن presigned URL از Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/generate-upload-url`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const { uploadUrl, publicUrl } = await res.json();
+
+      // ۲. آپلود مستقیم به ArvanCloud
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`آپلود به آروان ناموفق: ${uploadRes.status}`);
+      }
+
+      // ۳. ثبت پیام در Supabase
+      const senderName = (state.user.email || 'کاربر').split('@')[0];
+      const { error } = await supabase.from('chat_messages').insert({
+        household_id: state.householdId,
+        user_id: state.user.id,
+        sender_name: senderName,
+        message: caption,
+        attachment_url: publicUrl,
+        attachment_type: 'image',
+      });
+
+      if (error) throw error;
+
+      input.value = '';
+      input.style.height = 'auto';
+      await refreshChat();
+      renderChat();
+      toast('عکس ارسال شد ✓');
+    } catch (err) {
+      console.error('[UPLOAD]', err);
+      toast('خطا: ' + err.message);
+    } finally {
+      sendBtn.disabled = false;
+      if (attachBtn) attachBtn.disabled = false;
+      const fileInput = $('chatFileInput');
+      if (fileInput) fileInput.value = '';
+    }
+  }
+
+  // به‌روزرسانی badge پیام‌های خوانده‌نشده
+  function updateChatBadge() {
+    const badge = $('chatBadge');
+    if (!badge) return;
+    if (state.chatUnread > 0) {
+      badge.textContent = state.chatUnread > 99 ? '99+' : String(state.chatUnread);
+      badge.style.display = 'grid';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  // باز کردن مودال چت
+  async function openChat() {
+    $('chatModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    await refreshChat();
+    renderChat();
+    state.chatUnread = 0;
+    updateChatBadge();
+    setTimeout(() => $('chatInput').focus(), 320);
+  }
+
+  // بستن مودال چت
+  function closeChat() {
+    $('chatModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  // لایت‌باکس عکس
+  function openLightbox(url) {
+    const lb = $('lightbox');
+    const img = $('lightboxImg');
+    if (!lb || !img) return;
+    img.src = url;
+    lb.classList.add('open');
+  }
+
+  function closeLightbox() {
+    const lb = $('lightbox');
+    if (!lb) return;
+    lb.classList.remove('open');
+    $('lightboxImg').src = '';
+  }
+
+  /* =========================================================
+     ۱۹. مودال تراکنش
+     ========================================================= */
   let formType = 'expense', formCat = null, formMember = null, editId = null;
   function openAdd(id){
     editId = id || null;
@@ -760,28 +1088,81 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     toast(editId ? 'ویرایش شد ✓' : 'ثبت شد ✓');
   }
 
-  /* ---------- Render all ---------- */
-  function renderAll(){ renderHome(); renderTx(); renderReport(); renderShopping(); }
+  /* =========================================================
+     ۲۰. رندر کلی
+     ========================================================= */
+  function renderAll(){
+    renderHome(); renderTx(); renderReport(); renderShopping();
+    // اگر چت باز است، رفرش کن
+    if ($('chatModal') && $('chatModal').classList.contains('open')) renderChat();
+    updateChatBadge();
+  }
 
-  /* ---------- Events ---------- */
+  /* =========================================================
+     ۲۱. اتصال رویدادها
+     ========================================================= */
   function bindEvents(){
+    // Auth
     $('tabLogin').addEventListener('click', () => setAuthMode('login'));
     $('tabSignup').addEventListener('click', () => setAuthMode('signup'));
     $('authSubmitBtn').addEventListener('click', submitAuth);
     $('authPassword').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
     $('authEmail').addEventListener('keydown', e => { if (e.key === 'Enter') $('authPassword').focus(); });
 
+    // ورودی‌های عددی
     $('fAmount').addEventListener('input', e => { e.target.value = onlyDigits(e.target.value); updateAmountPreview(); });
     $('fDate').addEventListener('change', updateDateLabel);
     $('shopPrice').addEventListener('input', e => e.target.value = onlyDigits(e.target.value));
     $('shopQty').addEventListener('input', e => e.target.value = onlyDigits(e.target.value));
     $('shopName').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
     $('shopPrice').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
+
+    // مودال تراکنش — بستن با کلیک روی پس‌زمینه
     $('addModal').addEventListener('click', e => { if (e.target === $('addModal')) closeAdd(); });
+
+    // ===== چت =====
+    $('chatSendBtn').addEventListener('click', sendChatMessage);
+
+    // ارسال با Enter (و shift+Enter برای خط جدید)
+    $('chatInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendChatMessage();
+      }
+    });
+
+    // Auto-resize textarea
+    $('chatInput').addEventListener('input', e => {
+      e.target.style.height = 'auto';
+      e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+    });
+
+    // انتخاب فایل برای آپلود
+    $('chatFileInput').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) uploadChatImage(file);
+    });
+
+    // بستن چت با کلیک روی پس‌زمینه
+    $('chatModal').addEventListener('click', e => {
+      if (e.target === $('chatModal')) closeChat();
+    });
+
+    // بستن لایت‌باکس با ESC
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if ($('lightbox')?.classList.contains('open')) closeLightbox();
+        else if ($('chatModal')?.classList.contains('open')) closeChat();
+      }
+    });
+
+    // جلوگیری از زوم دو انگشتی
     document.addEventListener('gesturestart', e => e.preventDefault());
   }
 
-  /* ---------- Public API ---------- */
+  /* =========================================================
+     ۲۲. API عمومی (برای onclick در HTML)
+     ========================================================= */
   window.app = {
     go, toggleTheme, signOut,
     setTxFilter, setMonthFilter,
@@ -789,10 +1170,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     addShoppingItem, toggleShopItem, delShopItem, editShopPrice,
     clearDoneShopping, clearAllShopping, shoppingToExpense,
     saveBudget, addMember, delMember, addCat, delCat,
-    copyShareCode, joinHousehold
+    copyShareCode, joinHousehold,
+    // چت
+    openChat, closeChat, sendChatMessage, uploadChatImage,
+    openLightbox, closeLightbox
   };
 
-  /* ---------- Init ---------- */
+  /* =========================================================
+     ۲۳. شروع برنامه
+     ========================================================= */
   (async function start(){
     applyTheme();
     bindEvents();
@@ -806,12 +1192,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       showView('loginView');
     }
 
+    // گوش دادن به تغییرات auth
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         state.user = session.user;
         await afterLogin();
       } else if (event === 'SIGNED_OUT') {
         state.user = null; state.householdId = null;
+        state.messages = []; state.chatUnread = 0;
         showView('loginView');
       }
     });
