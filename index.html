@@ -228,6 +228,11 @@
         <span>خرید</span>
       </button>
       <button class="fab" onclick="app.openAdd()">+</button>
+      <button class="nav-item" onclick="app.openChat()" style="position:relative">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>چت</span>
+        <span class="chat-badge" id="chatBadge" style="display:none"></span>
+      </button>
       <button class="nav-item" data-nav="report" onclick="app.go('report')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V11M12 21V4M20 21v-6"/></svg>
         <span>گزارش</span>
@@ -239,7 +244,7 @@
     </nav>
   </div>
 
-  <!-- ADD MODAL -->
+  <!-- ADD TRANSACTION MODAL -->
   <div class="modal" id="addModal">
     <div class="sheet">
       <div class="sheet-head">
@@ -266,6 +271,29 @@
         <input type="text" id="fNote" class="text-input" placeholder="مثلاً خرید هفتگی" autocomplete="off">
       </div>
     </div>
+  </div>
+
+  <!-- CHAT MODAL -->
+  <div class="modal" id="chatModal">
+    <div class="sheet chat-sheet">
+      <div class="sheet-head">
+        <button class="close" onclick="app.closeChat()">✕</button>
+        <div class="t">چت خانوادگی 💬</div>
+        <div style="width:32px"></div>
+      </div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-bar">
+        <button class="chat-attach-btn" onclick="document.getElementById('chatFileInput').click()" aria-label="پیوست عکس" title="ارسال عکس">📎</button>
+        <input type="file" id="chatFileInput" accept="image/*" style="display:none">
+        <textarea class="chat-input" id="chatInput" placeholder="پیام..." rows="1"></textarea>
+        <button class="chat-send-btn" id="chatSendBtn" onclick="app.sendChatMessage()" aria-label="ارسال">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX (نمایش بزرگ عکس) -->
+  <div class="lightbox" id="lightbox" onclick="app.closeLightbox()">
+    <img id="lightboxImg" src="" alt="عکس">
   </div>
 
   <div class="toast" id="toast"></div>
