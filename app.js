@@ -96,6 +96,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (msg.includes('Password should be at least 6')) return 'رمز عبور باید حداقل ۶ کاراکتر باشد';
     if (msg.includes('Unable to validate email')) return 'فرمت ایمیل نامعتبر است';
     if (msg.includes('network') || msg.includes('fetch')) return 'خطای شبکه — اتصال اینترنت را بررسی کنید';
+    if (msg.includes('rate limit')) return 'محدودیت ارسال ایمیل — لطفاً چند دقیقه صبر کنید';
     return msg;
   }
 
@@ -154,19 +155,19 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     renderAll(); renderSettings();
   }
 
-  /* ---------- Household (FIXED: uses RPC) ---------- */
+  /* ---------- Household ---------- */
   async function loadHousehold(){
-    // ۱. بررسی اینکه کاربر عضو خانوار هست یا نه
     const { data: memberships, error } = await supabase
       .from('household_members').select('household_id')
-      .eq('user_id', state.user.id).limit(1);
+      .eq('user_id', state.user.id)
+      .order('joined_at', { ascending: false })
+      .limit(1);
 
     if (error) { toast('خطا در خانوار: ' + error.message); return; }
 
     if (memberships && memberships.length > 0) {
       state.householdId = memberships[0].household_id;
     } else {
-      // ۲. ساخت خانوار جدید از طریق RPC (بدون مشکل RLS)
       const defaultConfig = {
         members: [{ id: 'm1', name: (state.user.email || 'من').split('@')[0] }],
         categories: {
@@ -214,7 +215,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       return;
     }
 
-    // ۳. بارگذاری تنظیمات خانوار موجود
     const { data: hh, error: hhErr } = await supabase.from('households')
       .select('config, share_code').eq('id', state.householdId).single();
     if (hhErr) { toast('خطا: ' + hhErr.message); return; }
@@ -652,14 +652,38 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       document.execCommand('copy'); toast('کد کپی شد ✓');
     }
   }
+
   async function joinHousehold(){
     const code = $('joinCodeInput').value.trim().toUpperCase();
     if (!code) return toast('کد را وارد کنید');
-    if (!confirm('با پیوستن، از داده‌های خانوار قبلی جدا می‌شوید. ادامه؟')) return;
-    const { error } = await supabase.rpc('join_household_by_code', { code_input: code });
-    if (error) return toast('کد نامعتبر: ' + error.message);
+    if (!confirm('با پیوستن، از خانوار قبلی جدا می‌شوید و داده‌های خانوار جدید را می‌بینید. ادامه؟')) return;
+
+    console.log('[DEBUG] Joining household with code:', code);
+    const { data: newHhId, error } = await supabase.rpc('join_household_by_code', { code_input: code });
+
+    if (error) {
+      console.error('[DEBUG] Join error:', error);
+      return toast('کد نامعتبر: ' + error.message);
+    }
+
+    console.log('[DEBUG] Joined household:', newHhId);
+
+    // مهم: مستقیماً شناسه جدید را تنظیم کن (نه از loadHousehold)
+    state.householdId = newHhId;
+
+    // بارگذاری تنظیمات خانوار جدید
+    const { data: hh, error: hhErr } = await supabase.from('households')
+      .select('config, share_code').eq('id', newHhId).single();
+
+    if (!hhErr && hh) {
+      state.shareCode = hh.share_code || '-----';
+      state.config = hh.config || { members: [{ id: 'm1', name: 'من' }], categories: { expense: [], income: [] } };
+    }
+
     $('joinCodeInput').value = '';
-    await loadHousehold(); await refreshAll();
+
+    // رفرش داده‌ها با householdId جدید
+    await refreshAll();
     if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel);
     subscribeRealtime();
     renderAll(); renderSettings(); renderShopping();
