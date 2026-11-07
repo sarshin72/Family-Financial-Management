@@ -154,8 +154,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     renderAll(); renderSettings();
   }
 
-  /* ---------- Household ---------- */
+  /* ---------- Household (FIXED: uses RPC) ---------- */
   async function loadHousehold(){
+    // ۱. بررسی اینکه کاربر عضو خانوار هست یا نه
     const { data: memberships, error } = await supabase
       .from('household_members').select('household_id')
       .eq('user_id', state.user.id).limit(1);
@@ -165,38 +166,55 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (memberships && memberships.length > 0) {
       state.householdId = memberships[0].household_id;
     } else {
+      // ۲. ساخت خانوار جدید از طریق RPC (بدون مشکل RLS)
       const defaultConfig = {
         members: [{ id: 'm1', name: (state.user.email || 'من').split('@')[0] }],
         categories: {
           expense: [
-            { id: 'ce1', name: 'خوراک', icon: '🍽️' }, { id: 'ce2', name: 'پوشاک', icon: '👕' },
-            { id: 'ce3', name: 'مسکن', icon: '🏠' }, { id: 'ce4', name: 'حمل‌ونقل', icon: '🚗' },
-            { id: 'ce5', name: 'درمان', icon: '💊' }, { id: 'ce6', name: 'آموزش', icon: '📚' },
-            { id: 'ce7', name: 'تفریح', icon: '🎮' }, { id: 'ce8', name: 'قبض‌ها', icon: '🧾' },
-            { id: 'ce9', name: 'هدیه', icon: '🎁' }, { id: 'ce10', name: 'سایر', icon: '📦' }
+            { id: 'ce1', name: 'خوراک', icon: '🍽️' },
+            { id: 'ce2', name: 'پوشاک', icon: '👕' },
+            { id: 'ce3', name: 'مسکن', icon: '🏠' },
+            { id: 'ce4', name: 'حمل‌ونقل', icon: '🚗' },
+            { id: 'ce5', name: 'درمان', icon: '💊' },
+            { id: 'ce6', name: 'آموزش', icon: '📚' },
+            { id: 'ce7', name: 'تفریح', icon: '🎮' },
+            { id: 'ce8', name: 'قبض‌ها', icon: '🧾' },
+            { id: 'ce9', name: 'هدیه', icon: '🎁' },
+            { id: 'ce10', name: 'سایر', icon: '📦' }
           ],
           income: [
-            { id: 'ci1', name: 'حقوق', icon: '💼' }, { id: 'ci2', name: 'کار آزاد', icon: '🧑‍💻' },
-            { id: 'ci3', name: 'سود بانکی', icon: '🏦' }, { id: 'ci4', name: 'هدیه', icon: '🎁' },
+            { id: 'ci1', name: 'حقوق', icon: '💼' },
+            { id: 'ci2', name: 'کار آزاد', icon: '🧑‍💻' },
+            { id: 'ci3', name: 'سود بانکی', icon: '🏦' },
+            { id: 'ci4', name: 'هدیه', icon: '🎁' },
             { id: 'ci5', name: 'سایر', icon: '📦' }
           ]
         }
       };
-      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const { data: newHh, error: hErr } = await supabase.from('households')
-        .insert({ name: 'خانواده', config: defaultConfig, share_code: code })
-        .select().single();
-      if (hErr) { toast('خطا: ' + hErr.message); return; }
 
-      await supabase.from('household_members').insert({
-        household_id: newHh.id, user_id: state.user.id, role: 'owner'
+      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+      console.log('[DEBUG] Calling RPC create_household_with_member...');
+      const { data: newHhId, error: hErr } = await supabase.rpc('create_household_with_member', {
+        hh_name: 'خانواده',
+        hh_share_code: code,
+        hh_config: defaultConfig
       });
-      state.householdId = newHh.id;
+
+      if (hErr) {
+        console.error('[DEBUG] RPC error:', hErr);
+        toast('خطا در ساخت خانوار: ' + hErr.message);
+        return;
+      }
+
+      console.log('[DEBUG] Household created:', newHhId);
+      state.householdId = newHhId;
       state.shareCode = code;
       state.config = defaultConfig;
       return;
     }
 
+    // ۳. بارگذاری تنظیمات خانوار موجود
     const { data: hh, error: hhErr } = await supabase.from('households')
       .select('config, share_code').eq('id', state.householdId).single();
     if (hhErr) { toast('خطا: ' + hhErr.message); return; }
@@ -206,6 +224,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
   /* ---------- Data loaders ---------- */
   async function refreshTransactions(){
+    if (!state.householdId) return;
     const { data, error } = await supabase.from('transactions').select('*')
       .eq('household_id', state.householdId)
       .order('date', { ascending: false }).order('created_at', { ascending: false });
@@ -217,6 +236,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }));
   }
   async function refreshShopping(){
+    if (!state.householdId) return;
     const { data, error } = await supabase.from('shopping_list').select('*')
       .eq('household_id', state.householdId).order('created_at', { ascending: true });
     if (error) { console.error(error); return; }
@@ -230,6 +250,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }));
   }
   async function refreshBudget(){
+    if (!state.householdId) return;
     const [jy, jm] = todayJ();
     const { data } = await supabase.from('budgets').select('amount')
       .eq('household_id', state.householdId).eq('month', `${jy}-${p2(jm)}`).maybeSingle();
@@ -242,6 +263,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
   /* ---------- Realtime ---------- */
   function subscribeRealtime(){
+    if (!state.householdId) return;
     if (state.realtimeChannel) supabase.removeChannel(state.realtimeChannel);
     state.realtimeChannel = supabase.channel('hh-' + state.householdId)
       .on('postgres_changes', { event:'*', schema:'public', table:'transactions', filter:`household_id=eq.${state.householdId}` },
@@ -431,6 +453,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     const nameEl = $('shopName');
     const name = nameEl.value.trim();
     if (!name) return toast('نام کالا را وارد کنید');
+    if (!state.householdId) return toast('خانوار بارگذاری نشده — دوباره وارد شوید');
     const qty = Math.max(1, parseInt(onlyDigits($('shopQty').value),10)||1);
     const unit = ($('shopUnit').value.trim() || 'عدد');
     const price = Math.max(0, parseInt(onlyDigits($('shopPrice').value),10)||0);
