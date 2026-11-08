@@ -42,6 +42,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
      ۳. توابع تاریخ شمسی
      ========================================================= */
   const PMONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+
   function toJalali(gy, gm, gd) {
     const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
     let jy = (gy <= 1600) ? 0 : 979;
@@ -56,7 +57,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     return [jy, jm, jd];
   }
 
-  // ⬇️ جدید: تبدیل شمسی به میلادی (برای تقویم)
   function jalaliToGregorian(jy, jm, jd) {
     jy += 1595;
     let days = -355668 + (365 * jy) + (~~(jy / 33) * 8) + ~~(((jy % 33) + 3) / 4) + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
@@ -80,19 +80,16 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     return [gy, gm, gd];
   }
 
-  // ⬇️ جدید: بررسی سال کبیسه شمسی
   function isLeapJalaliYear(jy) {
     return ((25 * jy + 11) % 33) < 8;
   }
 
-  // ⬇️ جدید: تعداد روزهای یک ماه شمسی
   function daysInJalaliMonth(jy, jm) {
     if (jm <= 6) return 31;
     if (jm <= 11) return 30;
     return isLeapJalaliYear(jy) ? 30 : 29;
   }
 
-  // ⬇️ جدید: روز اول ماه شمسی در هفته (۰ = شنبه)
   function jalaliMonthFirstWeekday(jy, jm) {
     const [gy, gm, gd] = jalaliToGregorian(jy, jm, 1);
     const d = new Date(Date.UTC(gy, gm - 1, gd));
@@ -489,7 +486,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۴. لیست خرید  ← اصلاح‌شده برای موبایل
+     ۱۴. لیست خرید — با دکمه حذف SVG جمع‌وجور
      ========================================================= */
   function renderShopping(){
     const list = state.shoppingList;
@@ -517,14 +514,17 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
           : ''
       ].filter(Boolean).join('');
 
-      // ⬇️ تغییر: shop-del جای tx-del + بدون inline style
       return `<div class="shop-row${i.done?' done':''}">
         <button class="shop-check" onclick="app.toggleShopItem('${i.id}')" aria-label="تیک">${i.done?'✓':''}</button>
         <div class="shop-info">
           <div class="shop-name">${esc(i.name)}</div>
           <div class="shop-meta">${chips}</div>
         </div>
-        <button class="shop-del" onclick="app.delShopItem('${i.id}')" aria-label="حذف">✕</button>
+        <button class="shop-del" onclick="app.delShopItem('${i.id}')" aria-label="حذف">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18"/>
+          </svg>
+        </button>
       </div>`;
     };
 
@@ -624,7 +624,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۴.۵. تقویم شمسی (NEW)
+     ۱۴.۵. تقویم شمسی
      ========================================================= */
   let dpViewYear = 0, dpViewMonth = 0, dpSelectedIso = null;
 
@@ -1084,7 +1084,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۹. مودال تراکنش  ← دسته کشویی + تقویم شمسی
+     ۱۹. مودال تراکنش — دراپ‌داون اختصاصی + تقویم شمسی
      ========================================================= */
   let formType = 'expense', formCat = null, formMember = null, editId = null;
 
@@ -1097,9 +1097,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('sheetTitle').textContent = t ? 'ویرایش' : 'تراکنش جدید';
     $('fAmount').value = t ? String(t.amount) : '';
     $('fNote').value = t ? (t.note||'') : '';
-    setFDate(t ? t.date : isoOf(new Date()));   // ← تغییر
+    setFDate(t ? t.date : isoOf(new Date()));
     updateTypeUI(); renderCatChips(); renderMemberChips();
     updateAmountPreview();
+
+    // پاک کردن هر منوی باز از قبل
+    document.querySelectorAll('.cat-select-menu.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.cat-select-trigger.open').forEach(t => t.classList.remove('open'));
+
     $('addModal').classList.add('open');
     document.body.style.overflow = 'hidden';
   }
@@ -1113,14 +1118,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('btnTypeIncome').classList.toggle('active', !isExp);
   }
 
-  // ⬇️ تغییر: به‌جای chips، کشوی (select) رندر می‌شود
+  // ⬇️ دراپ‌داون اختصاصی — فونت و رنگ کاملاً تحت کنترل
   function renderCatChips(){
     const cats = state.config.categories[formType] || [];
     if (!cats.find(c => c.id === formCat)) formCat = cats[0]?.id || null;
     const container = $('catChips');
     if (!container) return;
 
-    // پاک کردن کلاس chips و تبدیل به بلاک
     container.className = '';
     container.style.display = 'block';
 
@@ -1130,15 +1134,59 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       return;
     }
 
+    const current = cats.find(c => c.id === formCat) || cats[0];
+
     container.innerHTML = `
       <div class="cat-select-wrap">
-        <select class="cat-select" id="catSelect">
-          ${cats.map(c => `<option value="${c.id}" ${c.id===formCat?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}
-        </select>
+        <button type="button" class="cat-select-trigger" id="catSelectTrigger">
+          <span class="label">${current.icon} ${esc(current.name)}</span>
+          <span class="arrow">▾</span>
+        </button>
+        <div class="cat-select-menu" id="catSelectMenu">
+          ${cats.map(c => `
+            <button type="button" class="cat-select-option${c.id===formCat?' selected':''}" data-id="${c.id}">
+              <span class="opt-icon">${c.icon}</span>
+              <span class="opt-name">${esc(c.name)}</span>
+            </button>
+          `).join('')}
+        </div>
       </div>
     `;
-    const sel = $('catSelect');
-    if (sel) sel.addEventListener('change', e => { formCat = e.target.value; });
+
+    const trigger = $('catSelectTrigger');
+    const menu = $('catSelectMenu');
+    if (!trigger || !menu) return;
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = menu.classList.contains('open');
+      // بستن سایر منوها
+      document.querySelectorAll('.cat-select-menu.open').forEach(m => {
+        if (m !== menu) m.classList.remove('open');
+      });
+      document.querySelectorAll('.cat-select-trigger.open').forEach(t => {
+        if (t !== trigger) t.classList.remove('open');
+      });
+      menu.classList.toggle('open', !isOpen);
+      trigger.classList.toggle('open', !isOpen);
+    });
+
+    menu.querySelectorAll('.cat-select-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = opt.dataset.id;
+        formCat = id;
+        const c = cats.find(x => x.id === id);
+        if (c) {
+          trigger.querySelector('.label').textContent = `${c.icon} ${c.name}`;
+        }
+        menu.querySelectorAll('.cat-select-option').forEach(o => {
+          o.classList.toggle('selected', o.dataset.id === id);
+        });
+        menu.classList.remove('open');
+        trigger.classList.remove('open');
+      });
+    });
   }
 
   function pickCat(id){ formCat = id; renderCatChips(); }
@@ -1160,7 +1208,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (amount <= 0) return toast('مبلغ را وارد کنید');
     if (!formCat) return toast('یک دسته انتخاب کنید');
     if (!formMember) return toast('یک عضو انتخاب کنید');
-    const date = getFDate();   // ← تغییر
+    const date = getFDate();
     const note = $('fNote').value.trim();
     if (editId){
       const { error } = await supabase.from('transactions').update({
@@ -1204,7 +1252,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('shopName').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
     $('shopPrice').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
 
-    // ⬇️ تقویم شمسی: تغییر input به text + کلیک باز می‌کند
+    // تقویم شمسی
     createDatePickerModal();
     const fDate = $('fDate');
     if (fDate) {
@@ -1218,7 +1266,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       });
     }
 
-    // پنهان‌کردن #dateJalali اگر وجود دارد (چون fDate خودش شمسی نشان می‌دهد)
     const dj = $('dateJalali');
     if (dj) dj.style.display = 'none';
 
@@ -1244,6 +1291,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         else if ($('datePickerModal')?.classList.contains('open')) closeDatePicker();
         else if ($('chatModal')?.classList.contains('open')) closeChat();
       }
+    });
+
+    // بستن دراپ‌داون دسته‌بندی با کلیک بیرون
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.cat-select-menu.open').forEach(m => m.classList.remove('open'));
+      document.querySelectorAll('.cat-select-trigger.open').forEach(t => t.classList.remove('open'));
     });
 
     document.addEventListener('gesturestart', e => e.preventDefault());
