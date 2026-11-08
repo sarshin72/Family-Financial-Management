@@ -1,7 +1,5 @@
-
 const SUPABASE_URL = 'https://scduywpwiqeaimmmevyn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
-
 
 (function () {
   'use strict';
@@ -24,7 +22,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   });
 
   /* =========================================================
-     ۲. State — تمام وضعیت برنامه در یک آبجکت
+     ۲. State
      ========================================================= */
   const state = {
     user: null,
@@ -34,8 +32,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     transactions: [],
     shoppingList: [],
     budget: 0,
-    messages: [],           // ← جدید: پیام‌های چت
-    chatUnread: 0,          // ← جدید: تعداد پیام‌های خوانده‌نشده
+    messages: [],
+    chatUnread: 0,
     realtimeChannel: null,
     authMode: 'login'
   };
@@ -57,6 +55,50 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     const jd = 1 + ((days < 186) ? (days%31) : ((days-186)%30));
     return [jy, jm, jd];
   }
+
+  // ⬇️ جدید: تبدیل شمسی به میلادی (برای تقویم)
+  function jalaliToGregorian(jy, jm, jd) {
+    jy += 1595;
+    let days = -355668 + (365 * jy) + (~~(jy / 33) * 8) + ~~(((jy % 33) + 3) / 4) + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+    let gy = 400 * ~~(days / 146097);
+    days %= 146097;
+    if (days > 36524) {
+      gy += 100 * ~~(--days / 36524);
+      days %= 36524;
+      if (days >= 365) days++;
+    }
+    gy += 4 * ~~(days / 1461);
+    days %= 1461;
+    if (days > 365) {
+      gy += ~~((days - 1) / 365);
+      days = (days - 1) % 365;
+    }
+    let gd = days + 1;
+    const sal_a = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let gm = 0;
+    for (gm = 1; gm <= 12 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
+    return [gy, gm, gd];
+  }
+
+  // ⬇️ جدید: بررسی سال کبیسه شمسی
+  function isLeapJalaliYear(jy) {
+    return ((25 * jy + 11) % 33) < 8;
+  }
+
+  // ⬇️ جدید: تعداد روزهای یک ماه شمسی
+  function daysInJalaliMonth(jy, jm) {
+    if (jm <= 6) return 31;
+    if (jm <= 11) return 30;
+    return isLeapJalaliYear(jy) ? 30 : 29;
+  }
+
+  // ⬇️ جدید: روز اول ماه شمسی در هفته (۰ = شنبه)
+  function jalaliMonthFirstWeekday(jy, jm) {
+    const [gy, gm, gd] = jalaliToGregorian(jy, jm, 1);
+    const d = new Date(Date.UTC(gy, gm - 1, gd));
+    return (d.getUTCDay() + 1) % 7;
+  }
+
   const p2 = n => String(n).padStart(2, '0');
   const isoOf = d => `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
   const jalaliOf = iso => { const [y,m,d] = iso.split('-').map(Number); return toJalali(y,m,d); };
@@ -85,7 +127,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   function findMember(id){ return state.config.members.find(m => m.id === id); }
 
   /* =========================================================
-     ۵. مدیریت Views (صفحه‌های اصلی)
+     ۵. مدیریت Views
      ========================================================= */
   const views = ['loadingView','loginView','appView'];
   function showView(name){
@@ -94,7 +136,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۶. احراز هویت (ورود/ثبت‌نام)
+     ۶. احراز هویت
      ========================================================= */
   function setAuthMode(mode){
     state.authMode = mode;
@@ -104,7 +146,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('authError').textContent = '';
   }
 
-  // ترجمه خطاهای Supabase به فارسی
   function translateAuthError(msg){
     if (msg.includes('Invalid login credentials')) return 'ایمیل یا رمز عبور اشتباه است';
     if (msg.includes('User already registered')) return 'این ایمیل قبلاً ثبت‌نام کرده';
@@ -163,7 +204,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     showView('loadingView');
     await loadHousehold();
     await refreshAll();
-    await refreshChat();   // ← بارگذاری پیام‌های چت
+    await refreshChat();
     subscribeRealtime();
     showView('appView');
 
@@ -171,15 +212,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     const [jy, jm, jd] = toJalali(n.getFullYear(), n.getMonth()+1, n.getDate());
     const dayNames = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
     $('todayLabel').textContent = `${dayNames[n.getDay()]}، ${jd} ${PMONTHS[jm-1]} ${jy}`;
-    $('fDate').value = isoOf(n);
+    setFDate(isoOf(n));
     renderAll(); renderSettings();
   }
 
   /* =========================================================
-     ۸. خانوار — ساخت با RPC یا بارگذاری موجود
+     ۸. خانوار
      ========================================================= */
   async function loadHousehold(){
-    // بررسی اینکه کاربر عضو خانوار هست یا نه
     const { data: memberships, error } = await supabase
       .from('household_members').select('household_id')
       .eq('user_id', state.user.id)
@@ -191,7 +231,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (memberships && memberships.length > 0) {
       state.householdId = memberships[0].household_id;
     } else {
-      // ساخت خانوار جدید از طریق RPC (دور زدن RLS برای RETURNING)
       const defaultConfig = {
         members: [{ id: 'm1', name: (state.user.email || 'من').split('@')[0] }],
         categories: {
@@ -219,27 +258,20 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
       const code = Math.random().toString(36).substring(2, 10).toUpperCase();
 
-      console.log('[DEBUG] Calling RPC create_household_with_member...');
       const { data: newHhId, error: hErr } = await supabase.rpc('create_household_with_member', {
         hh_name: 'خانواده',
         hh_share_code: code,
         hh_config: defaultConfig
       });
 
-      if (hErr) {
-        console.error('[DEBUG] RPC error:', hErr);
-        toast('خطا در ساخت خانوار: ' + hErr.message);
-        return;
-      }
+      if (hErr) { toast('خطا در ساخت خانوار: ' + hErr.message); return; }
 
-      console.log('[DEBUG] Household created:', newHhId);
       state.householdId = newHhId;
       state.shareCode = code;
       state.config = defaultConfig;
       return;
     }
 
-    // بارگذاری تنظیمات خانوار موجود
     const { data: hh, error: hhErr } = await supabase.from('households')
       .select('config, share_code').eq('id', state.householdId).single();
     if (hhErr) { toast('خطا: ' + hhErr.message); return; }
@@ -248,7 +280,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۹. بارگذاری داده‌ها (تراکنش، خرید، بودجه، چت)
+     ۹. بارگذاری داده‌ها
      ========================================================= */
   async function refreshTransactions(){
     if (!state.householdId) return;
@@ -292,7 +324,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۰. Realtime — اشتراک در تغییرات همه جداول
+     ۱۰. Realtime
      ========================================================= */
   function subscribeRealtime(){
     if (!state.householdId) return;
@@ -304,18 +336,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
           async () => { await refreshShopping(); renderShopping(); renderHome(); })
       .on('postgres_changes', { event:'*', schema:'public', table:'budgets', filter:`household_id=eq.${state.householdId}` },
           async () => { await refreshBudget(); renderHome(); })
-      // ← اشتراک چت
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'chat_messages', filter:`household_id=eq.${state.householdId}` },
           async (payload) => {
-            console.log('[CHAT] New message:', payload);
             await refreshChat();
-
-            // اگر چت باز است → رفرش کن
             if ($('chatModal') && $('chatModal').classList.contains('open')) {
               renderChat();
               state.chatUnread = 0;
             } else if (payload.new && payload.new.user_id !== state.user.id) {
-              // چت بسته → badge + toast
               state.chatUnread++;
               updateChatBadge();
               const preview = payload.new.message || '📷 عکس';
@@ -371,7 +398,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('mIncome').textContent = fmt(mIncome);
     $('mExpense').textContent = fmt(mExpense);
 
-    // بودجه
     if (state.budget > 0) {
       $('budgetCard').style.display = '';
       const pct = Math.min(100, (mExpense/state.budget)*100);
@@ -382,7 +408,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       $('budgetPct').textContent = Math.round(pct) + '٪';
     } else $('budgetCard').style.display = 'none';
 
-    // پیش‌نمایش لیست خرید
     const shopPending = state.shoppingList.filter(i => !i.done);
     if (shopPending.length) {
       $('shopHomeCard').style.display = '';
@@ -394,7 +419,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         </div>`).join('');
     } else $('shopHomeCard').style.display = 'none';
 
-    // نمودار دسته‌بندی
     const entries = Object.entries(catTotals).sort((a,b) => b[1]-a[1]).slice(0,6);
     const maxCat = entries.length ? entries[0][1] : 1;
     $('catChart').innerHTML = entries.length
@@ -407,7 +431,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         }).join('')
       : `<div class="empty"><span class="em">📊</span>هنوز هزینه‌ای ثبت نشده</div>`;
 
-    // آخرین تراکنش‌ها
     const recent = [...state.transactions].sort((a,b) => b.date.localeCompare(a.date) || b.created - a.created).slice(0,5);
     $('recentList').innerHTML = recent.length
       ? recent.map(t => txRowHTML(t, false)).join('')
@@ -466,7 +489,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۴. لیست خرید
+     ۱۴. لیست خرید  ← اصلاح‌شده برای موبایل
      ========================================================= */
   function renderShopping(){
     const list = state.shoppingList;
@@ -487,22 +510,24 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       const chips = [
         `<span class="meta-chip">تعداد: <b>${fmt(qty)}</b> ${esc(unit)}</span>`,
         price > 0
-          ? `<span class="meta-chip" onclick="app.editShopPrice('${i.id}')">قیمت واحد: <b>${fmt(price)}</b> ت</span>`
-          : `<span class="meta-chip" onclick="app.editShopPrice('${i.id}')" style="color:var(--amber)">ثبت قیمت</span>`,
+          ? `<span class="meta-chip editable" onclick="app.editShopPrice('${i.id}')">قیمت واحد: <b>${fmt(price)}</b> ت</span>`
+          : `<span class="meta-chip editable" onclick="app.editShopPrice('${i.id}')">+ ثبت قیمت</span>`,
         price > 0
           ? `<span class="meta-chip total">جمع: <b>${fmt(total)}</b> ت</span>`
           : ''
       ].filter(Boolean).join('');
 
+      // ⬇️ تغییر: shop-del جای tx-del + بدون inline style
       return `<div class="shop-row${i.done?' done':''}">
-        <button class="shop-check" onclick="app.toggleShopItem('${i.id}')">${i.done?'✓':''}</button>
+        <button class="shop-check" onclick="app.toggleShopItem('${i.id}')" aria-label="تیک">${i.done?'✓':''}</button>
         <div class="shop-info">
           <div class="shop-name">${esc(i.name)}</div>
           <div class="shop-meta">${chips}</div>
         </div>
-        <button class="tx-del" onclick="app.delShopItem('${i.id}')" style="margin-top:4px">✕</button>
+        <button class="shop-del" onclick="app.delShopItem('${i.id}')" aria-label="حذف">✕</button>
       </div>`;
     };
+
     let html = '';
     if (pending.length) html += `<div class="shop-divider">در انتظار (${fmt(pending.length)})</div>` + pending.map(renderItem).join('');
     if (done.length) html += `<div class="shop-divider">خریداری شده (${fmt(done.length)})</div>` + done.map(renderItem).join('');
@@ -596,6 +621,99 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     await supabase.from('shopping_list').delete().in('id', done.map(i => i.id));
     await refreshTransactions(); await refreshShopping(); renderAll(); renderShopping();
     toast(`${fmt(total)} تومان ثبت شد ✓`);
+  }
+
+  /* =========================================================
+     ۱۴.۵. تقویم شمسی (NEW)
+     ========================================================= */
+  let dpViewYear = 0, dpViewMonth = 0, dpSelectedIso = null;
+
+  function setFDate(iso) {
+    const el = $('fDate');
+    if (!el) return;
+    el.dataset.iso = iso;
+    el.value = fmtJalali(iso);
+  }
+
+  function getFDate() {
+    const el = $('fDate');
+    return (el && el.dataset.iso) || isoOf(new Date());
+  }
+
+  function createDatePickerModal() {
+    if ($('datePickerModal')) return;
+    const modal = document.createElement('div');
+    modal.id = 'datePickerModal';
+    modal.className = 'modal date-picker-modal';
+    modal.innerHTML = `
+      <div class="date-picker">
+        <div class="dp-head">
+          <button type="button" class="dp-nav" onclick="app.dpPrevMonth()">‹</button>
+          <div class="dp-title" id="dpTitle"></div>
+          <button type="button" class="dp-nav" onclick="app.dpNextMonth()">›</button>
+        </div>
+        <div class="dp-weekdays">
+          <span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span>
+        </div>
+        <div class="dp-grid" id="dpGrid"></div>
+        <div class="dp-foot">
+          <button type="button" class="dp-btn dp-btn-today" onclick="app.dpSelectToday()">📅 امروز</button>
+          <button type="button" class="dp-btn dp-btn-close" onclick="app.closeDatePicker()">بستن</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', e => { if (e.target === modal) closeDatePicker(); });
+    document.body.appendChild(modal);
+  }
+
+  function openDatePicker() {
+    const iso = getFDate();
+    const [jy, jm] = jalaliOf(iso);
+    dpViewYear = jy; dpViewMonth = jm; dpSelectedIso = iso;
+    renderDatePicker();
+    $('datePickerModal').classList.add('open');
+  }
+
+  function closeDatePicker() {
+    $('datePickerModal').classList.remove('open');
+  }
+
+  function renderDatePicker() {
+    $('dpTitle').textContent = `${PMONTHS[dpViewMonth - 1]} ${dpViewYear}`;
+    const dim = daysInJalaliMonth(dpViewYear, dpViewMonth);
+    const firstWd = jalaliMonthFirstWeekday(dpViewYear, dpViewMonth);
+    const [tjy, tjm, tjd] = todayJ();
+    const [sy, sm, sd] = dpSelectedIso ? jalaliOf(dpSelectedIso) : [0, 0, 0];
+
+    let html = '';
+    for (let i = 0; i < firstWd; i++) html += '<div class="dp-day dp-empty"></div>';
+    for (let d = 1; d <= dim; d++) {
+      const cls = ['dp-day'];
+      if (dpViewYear === tjy && dpViewMonth === tjm && d === tjd) cls.push('dp-today');
+      if (dpViewYear === sy && dpViewMonth === sm && d === sd) cls.push('dp-selected');
+      html += `<button type="button" class="${cls.join(' ')}" onclick="app.dpSelectDay(${dpViewYear},${dpViewMonth},${d})">${d}</button>`;
+    }
+    $('dpGrid').innerHTML = html;
+  }
+
+  function dpPrevMonth() {
+    dpViewMonth--;
+    if (dpViewMonth < 1) { dpViewMonth = 12; dpViewYear--; }
+    renderDatePicker();
+  }
+  function dpNextMonth() {
+    dpViewMonth++;
+    if (dpViewMonth > 12) { dpViewMonth = 1; dpViewYear++; }
+    renderDatePicker();
+  }
+  function dpSelectDay(jy, jm, jd) {
+    const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+    setFDate(`${gy}-${p2(gm)}-${p2(gd)}`);
+    closeDatePicker();
+  }
+  function dpSelectToday() {
+    setFDate(isoOf(new Date()));
+    closeDatePicker();
   }
 
   /* =========================================================
@@ -727,7 +845,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۷. کد اشتراک و پیوستن به خانوار
+     ۱۷. کد اشتراک
      ========================================================= */
   async function copyShareCode(){
     try { await navigator.clipboard.writeText(state.shareCode); toast('کد کپی شد ✓'); }
@@ -737,37 +855,26 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   }
 
-  // پیوستن با کد — مستقیماً state.householdId را از RPC تنظیم می‌کند
   async function joinHousehold(){
     const code = $('joinCodeInput').value.trim().toUpperCase();
     if (!code) return toast('کد را وارد کنید');
     if (!confirm('با پیوستن، از خانوار قبلی جدا می‌شوید و داده‌های خانوار جدید را می‌بینید. ادامه؟')) return;
 
-    console.log('[DEBUG] Joining household with code:', code);
     const { data: newHhId, error } = await supabase.rpc('join_household_by_code', { code_input: code });
+    if (error) return toast('کد نامعتبر: ' + error.message);
 
-    if (error) {
-      console.error('[DEBUG] Join error:', error);
-      return toast('کد نامعتبر: ' + error.message);
-    }
-
-    console.log('[DEBUG] Joined household:', newHhId);
-
-    // مهم: مستقیماً شناسه جدید را تنظیم کن (نه از loadHousehold)
     state.householdId = newHhId;
 
-    // بارگذاری تنظیمات خانوار جدید
     const { data: hh, error: hhErr } = await supabase.from('households')
       .select('config, share_code').eq('id', newHhId).single();
-
     if (!hhErr && hh) {
       state.shareCode = hh.share_code || '-----';
       state.config = hh.config || { members: [{ id: 'm1', name: 'من' }], categories: { expense: [], income: [] } };
     }
 
     $('joinCodeInput').value = '';
+    state.chatUnread = 0;
 
-    // رفرش داده‌ها با householdId جدید
     await refreshAll();
     await refreshChat();
     if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel);
@@ -777,16 +884,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۸. چت — بارگذاری، رندر، ارسال، آپلود عکس
+     ۱۸. چت
      ========================================================= */
-
-  // فرمت ساعت پیام (۱۴:۳۰)
   function formatChatTime(iso) {
     const d = new Date(iso);
     return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
   }
 
-  // فرمت تاریخ پیام (امروز / دیروز / تاریخ شمسی)
   function formatChatDate(iso) {
     const n = new Date();
     const msgDate = isoOf(new Date(iso));
@@ -797,7 +901,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     return fmtJalali(msgDate);
   }
 
-  // بارگذاری ۳۰۰ پیام آخر از Supabase
   async function refreshChat() {
     if (!state.householdId) return;
     const { data, error } = await supabase.from('chat_messages').select('*')
@@ -817,7 +920,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }));
   }
 
-  // رندر پیام‌ها با پشتیبانی از عکس
   function renderChat() {
     const container = $('chatMessages');
     if (!container) return;
@@ -829,27 +931,20 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     let html = '';
     let lastDate = '';
     list.forEach(m => {
-      // جداکننده تاریخ
       const msgDate = isoOf(new Date(m.createdAt));
       if (msgDate !== lastDate) {
         html += `<div class="chat-date-sep">${formatChatDate(m.createdAt)}</div>`;
         lastDate = msgDate;
       }
-
       const isOwn = m.userId === state.user.id;
-
-      // محتوای حباب: اگر عکس دارد، عکس + متن (اختیاری)
       let bubbleContent = '';
       if (m.attachmentUrl) {
         bubbleContent += `<img src="${esc(m.attachmentUrl)}" loading="lazy" alt="عکس" onclick="app.openLightbox(this.src)">`;
       }
       if (m.message) {
-        bubbleContent += m.attachmentUrl
-          ? `<div style="margin-top:6px">${esc(m.message)}</div>`
-          : esc(m.message);
+        bubbleContent += m.attachmentUrl ? `<div style="margin-top:6px">${esc(m.message)}</div>` : esc(m.message);
       }
       if (!bubbleContent) bubbleContent = '—';
-
       html += `<div class="msg ${isOwn ? 'own' : 'other'}">
         ${!isOwn ? `<div class="msg-sender">${esc(m.senderName)}</div>` : ''}
         <div class="msg-bubble">${bubbleContent}</div>
@@ -857,41 +952,30 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       </div>`;
     });
     container.innerHTML = html;
-    // اسکرول به انتها
     requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
   }
 
-  // ارسال پیام متنی
   async function sendChatMessage() {
     const input = $('chatInput');
     const text = input.value.trim();
     if (!text) return;
     if (!state.householdId) return toast('خانوار بارگذاری نشده');
-
     const senderName = (state.user.email || 'کاربر').split('@')[0];
     input.value = '';
     input.style.height = 'auto';
-
     const { error } = await supabase.from('chat_messages').insert({
       household_id: state.householdId,
       user_id: state.user.id,
       sender_name: senderName,
       message: text
     });
-
-    if (error) {
-      toast('خطا: ' + error.message);
-      input.value = text;
-      return;
-    }
-
+    if (error) { toast('خطا: ' + error.message); input.value = text; return; }
     await refreshChat();
     renderChat();
     state.chatUnread = 0;
     updateChatBadge();
   }
 
-  // آپلود عکس — Edge Function → presigned URL → ArvanCloud
   async function uploadChatImage(file) {
     if (!file) return;
     if (!file.type.startsWith('image/')) return toast('فقط عکس مجاز است');
@@ -903,46 +987,34 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     const sendBtn = $('chatSendBtn');
     const attachBtn = document.querySelector('.chat-attach-btn');
 
-    // غیرفعال کردن دکمه‌ها در حین آپلود
     sendBtn.disabled = true;
     if (attachBtn) attachBtn.disabled = true;
     toast('در حال آپلود عکس...');
 
     try {
-      // ۱. گرفتن presigned URL از Edge Function
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
- `${SUPABASE_URL}/functions/v1/smooth-task-v2`,  
-  {
-    method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ fileName: file.name, contentType: file.type }),
-        }
-      );
-
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/smooth-task-v2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
-
       const { uploadUrl, publicUrl } = await res.json();
 
-      // ۲. آپلود مستقیم به ArvanCloud
       const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': file.type },
         body: file,
       });
+      if (!uploadRes.ok) throw new Error(`آپلود به آروان ناموفق: ${uploadRes.status}`);
 
-      if (!uploadRes.ok) {
-        throw new Error(`آپلود به آروان ناموفق: ${uploadRes.status}`);
-      }
-
-      // ۳. ثبت پیام در Supabase
       const senderName = (state.user.email || 'کاربر').split('@')[0];
       const { error } = await supabase.from('chat_messages').insert({
         household_id: state.householdId,
@@ -952,7 +1024,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
         attachment_url: publicUrl,
         attachment_type: 'image',
       });
-
       if (error) throw error;
 
       input.value = '';
@@ -971,7 +1042,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   }
 
-  // به‌روزرسانی badge پیام‌های خوانده‌نشده
   function updateChatBadge() {
     const badge = $('chatBadge');
     if (!badge) return;
@@ -983,7 +1053,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     }
   }
 
-  // باز کردن مودال چت
   async function openChat() {
     $('chatModal').classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -994,13 +1063,11 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     setTimeout(() => $('chatInput').focus(), 320);
   }
 
-  // بستن مودال چت
   function closeChat() {
     $('chatModal').classList.remove('open');
     document.body.style.overflow = '';
   }
 
-  // لایت‌باکس عکس
   function openLightbox(url) {
     const lb = $('lightbox');
     const img = $('lightboxImg');
@@ -1017,9 +1084,10 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۹. مودال تراکنش
+     ۱۹. مودال تراکنش  ← دسته کشویی + تقویم شمسی
      ========================================================= */
   let formType = 'expense', formCat = null, formMember = null, editId = null;
+
   function openAdd(id){
     editId = id || null;
     const t = id ? state.transactions.find(x => x.id === id) : null;
@@ -1029,27 +1097,52 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('sheetTitle').textContent = t ? 'ویرایش' : 'تراکنش جدید';
     $('fAmount').value = t ? String(t.amount) : '';
     $('fNote').value = t ? (t.note||'') : '';
-    $('fDate').value = t ? t.date : isoOf(new Date());
+    setFDate(t ? t.date : isoOf(new Date()));   // ← تغییر
     updateTypeUI(); renderCatChips(); renderMemberChips();
-    updateAmountPreview(); updateDateLabel();
+    updateAmountPreview();
     $('addModal').classList.add('open');
     document.body.style.overflow = 'hidden';
   }
+
   function closeAdd(){ $('addModal').classList.remove('open'); document.body.style.overflow = ''; }
   function setType(t){ formType = t; formCat = null; updateTypeUI(); renderCatChips(); }
+
   function updateTypeUI(){
     const isExp = formType === 'expense';
     $('btnTypeExpense').classList.toggle('active', isExp);
     $('btnTypeIncome').classList.toggle('active', !isExp);
   }
+
+  // ⬇️ تغییر: به‌جای chips، کشوی (select) رندر می‌شود
   function renderCatChips(){
     const cats = state.config.categories[formType] || [];
     if (!cats.find(c => c.id === formCat)) formCat = cats[0]?.id || null;
-    $('catChips').innerHTML = cats.length
-      ? cats.map(c => `<button class="chip${c.id===formCat?' active':''}" onclick="app.pickCat('${c.id}')">${c.icon} ${esc(c.name)}</button>`).join('')
-      : `<span style="font-size:12px;color:var(--muted)">دسته‌ای تعریف نشده</span>`;
+    const container = $('catChips');
+    if (!container) return;
+
+    // پاک کردن کلاس chips و تبدیل به بلاک
+    container.className = '';
+    container.style.display = 'block';
+
+    if (!cats.length) {
+      container.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:10px 0">دسته‌ای تعریف نشده — از تنظیمات اضافه کنید</div>`;
+      formCat = null;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="cat-select-wrap">
+        <select class="cat-select" id="catSelect">
+          ${cats.map(c => `<option value="${c.id}" ${c.id===formCat?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}
+        </select>
+      </div>
+    `;
+    const sel = $('catSelect');
+    if (sel) sel.addEventListener('change', e => { formCat = e.target.value; });
   }
+
   function pickCat(id){ formCat = id; renderCatChips(); }
+
   function renderMemberChips(){
     if (!state.config.members.find(m => m.id === formMember)) formMember = state.config.members[0]?.id || null;
     $('memberChips').innerHTML = state.config.members.map(m =>
@@ -1061,15 +1154,13 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     const v = parseInt(onlyDigits($('fAmount').value),10) || 0;
     $('amountPreview').textContent = v > 0 ? fmt(v) + ' تومان' : '';
   }
-  function updateDateLabel(){
-    const v = $('fDate').value;
-    $('dateJalali').textContent = v ? fmtJalali(v) : '';
-  }
+
   async function saveTx(){
     const amount = parseInt(onlyDigits($('fAmount').value),10) || 0;
     if (amount <= 0) return toast('مبلغ را وارد کنید');
     if (!formCat) return toast('یک دسته انتخاب کنید');
-    const date = $('fDate').value || isoOf(new Date());
+    if (!formMember) return toast('یک عضو انتخاب کنید');
+    const date = getFDate();   // ← تغییر
     const note = $('fNote').value.trim();
     if (editId){
       const { error } = await supabase.from('transactions').update({
@@ -1093,7 +1184,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
      ========================================================= */
   function renderAll(){
     renderHome(); renderTx(); renderReport(); renderShopping();
-    // اگر چت باز است، رفرش کن
     if ($('chatModal') && $('chatModal').classList.contains('open')) renderChat();
     updateChatBadge();
   }
@@ -1102,66 +1192,65 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
      ۲۱. اتصال رویدادها
      ========================================================= */
   function bindEvents(){
-    // Auth
     $('tabLogin').addEventListener('click', () => setAuthMode('login'));
     $('tabSignup').addEventListener('click', () => setAuthMode('signup'));
     $('authSubmitBtn').addEventListener('click', submitAuth);
     $('authPassword').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
     $('authEmail').addEventListener('keydown', e => { if (e.key === 'Enter') $('authPassword').focus(); });
 
-    // ورودی‌های عددی
     $('fAmount').addEventListener('input', e => { e.target.value = onlyDigits(e.target.value); updateAmountPreview(); });
-    $('fDate').addEventListener('change', updateDateLabel);
     $('shopPrice').addEventListener('input', e => e.target.value = onlyDigits(e.target.value));
     $('shopQty').addEventListener('input', e => e.target.value = onlyDigits(e.target.value));
     $('shopName').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
     $('shopPrice').addEventListener('keydown', e => { if (e.key === 'Enter') addShoppingItem(); });
 
-    // مودال تراکنش — بستن با کلیک روی پس‌زمینه
+    // ⬇️ تقویم شمسی: تغییر input به text + کلیک باز می‌کند
+    createDatePickerModal();
+    const fDate = $('fDate');
+    if (fDate) {
+      fDate.type = 'text';
+      fDate.readOnly = true;
+      fDate.inputMode = 'none';
+      fDate.setAttribute('placeholder', 'انتخاب تاریخ');
+      fDate.addEventListener('click', e => { e.preventDefault(); openDatePicker(); });
+      fDate.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDatePicker(); }
+      });
+    }
+
+    // پنهان‌کردن #dateJalali اگر وجود دارد (چون fDate خودش شمسی نشان می‌دهد)
+    const dj = $('dateJalali');
+    if (dj) dj.style.display = 'none';
+
     $('addModal').addEventListener('click', e => { if (e.target === $('addModal')) closeAdd(); });
 
-    // ===== چت =====
     $('chatSendBtn').addEventListener('click', sendChatMessage);
-
-    // ارسال با Enter (و shift+Enter برای خط جدید)
     $('chatInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendChatMessage();
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
     });
-
-    // Auto-resize textarea
     $('chatInput').addEventListener('input', e => {
       e.target.style.height = 'auto';
       e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
     });
-
-    // انتخاب فایل برای آپلود
     $('chatFileInput').addEventListener('change', e => {
       const file = e.target.files[0];
       if (file) uploadChatImage(file);
     });
+    $('chatModal').addEventListener('click', e => { if (e.target === $('chatModal')) closeChat(); });
 
-    // بستن چت با کلیک روی پس‌زمینه
-    $('chatModal').addEventListener('click', e => {
-      if (e.target === $('chatModal')) closeChat();
-    });
-
-    // بستن لایت‌باکس با ESC
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
         if ($('lightbox')?.classList.contains('open')) closeLightbox();
+        else if ($('datePickerModal')?.classList.contains('open')) closeDatePicker();
         else if ($('chatModal')?.classList.contains('open')) closeChat();
       }
     });
 
-    // جلوگیری از زوم دو انگشتی
     document.addEventListener('gesturestart', e => e.preventDefault());
   }
 
   /* =========================================================
-     ۲۲. API عمومی (برای onclick در HTML)
+     ۲۲. API عمومی
      ========================================================= */
   window.app = {
     go, toggleTheme, signOut,
@@ -1171,18 +1260,19 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     clearDoneShopping, clearAllShopping, shoppingToExpense,
     saveBudget, addMember, delMember, addCat, delCat,
     copyShareCode, joinHousehold,
-    // چت
     openChat, closeChat, sendChatMessage, uploadChatImage,
-    openLightbox, closeLightbox
+    openLightbox, closeLightbox,
+    // تقویم شمسی
+    dpPrevMonth, dpNextMonth, dpSelectDay, dpSelectToday, closeDatePicker
   };
 
   /* =========================================================
-     ۲۳. شروع برنامه
+     ۲۳. شروع
      ========================================================= */
   (async function start(){
     applyTheme();
     bindEvents();
-    $('fDate').value = isoOf(new Date());
+    setFDate(isoOf(new Date()));
 
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
@@ -1192,7 +1282,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       showView('loginView');
     }
 
-    // گوش دادن به تغییرات auth
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         state.user = session.user;
