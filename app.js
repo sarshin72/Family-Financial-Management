@@ -912,7 +912,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       // ۱. گرفتن presigned URL از Edge Function
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-  `${SUPABASE_URL}/functions/v1/${encodeURIComponent('ایندکس')}`,   
+ `${SUPABASE_URL}/functions/v1/smooth-task`,  
   {
     method: 'POST',
           headers: {
