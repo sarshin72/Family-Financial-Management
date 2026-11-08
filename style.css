@@ -191,7 +191,7 @@ main{flex:1;padding:6px 14px calc(110px + var(--safe-b))}
 .tx-del:active{background:var(--red);color:#fff}
 
 /* =========================================================
-   SHOPPING  ← بازطراحی‌شده برای موبایل
+   SHOPPING  ← دکمه حذف SVG جمع‌وجور
    ========================================================= */
 .shop-row{
   display:flex;align-items:flex-start;gap:10px;
@@ -199,14 +199,13 @@ main{flex:1;padding:6px 14px calc(110px + var(--safe-b))}
 }
 .shop-row:last-child{border-bottom:0}
 
-/* دکمه تیک — از ۲۸ به ۳۴ برای tap target */
 .shop-check{
-  width:34px;height:34px;border-radius:50%;
+  width:32px;height:32px;border-radius:50%;
   border:2px solid var(--border);
   display:grid;place-items:center;
-  font-size:15px;color:var(--muted);
+  font-size:14px;color:var(--muted);
   flex-shrink:0;transition:all .2s;
-  margin-top:1px;
+  margin-top:1px;padding:0;line-height:1;
 }
 .shop-row.done .shop-check{
   background:var(--green);border-color:var(--green);color:#fff;
@@ -226,7 +225,6 @@ main{flex:1;padding:6px 14px calc(110px + var(--safe-b))}
 .shop-meta{display:flex;flex-wrap:wrap;gap:5px}
 .shop-row.done .shop-meta{opacity:.55}
 
-/* چیپ‌های متادیتا — کمی بزرگ‌تر برای لمس */
 .meta-chip{
   display:inline-flex;align-items:center;gap:3px;
   padding:4px 10px;background:var(--bg);
@@ -248,16 +246,30 @@ body.dark .meta-chip.total{background:rgba(16,185,129,.2)}
 }
 .meta-chip.editable:active{background:rgba(79,70,229,.15)}
 
-/* ⬇️ دکمه حذف جدید — ۳۶×۳۶ و جداست از tx-del */
+/* ⬇️ دکمه حذف کاملاً جمع‌وجور — ۲۴px، SVG، بدون پس‌زمینه */
 .shop-del{
-  width:36px;height:36px;border-radius:11px;
+  width:24px;height:24px;
+  padding:0;
+  flex-shrink:0;
   display:grid;place-items:center;
-  background:var(--bg);color:var(--muted);
-  font-size:14px;flex-shrink:0;
-  transition:background .15s,color .15s;
+  background:none;
+  color:var(--muted);
+  opacity:.45;
+  border-radius:6px;
+  margin-top:4px;
+  transition:opacity .15s,background .15s,color .15s;
   align-self:flex-start;
 }
-.shop-del:active{background:var(--red);color:#fff}
+.shop-del:active{
+  opacity:1;
+  background:rgba(239,68,68,.12);
+  color:var(--red);
+}
+.shop-del svg{
+  width:13px;height:13px;
+  display:block;
+  pointer-events:none;
+}
 
 .shop-divider{
   font-size:11px;color:var(--muted);font-weight:600;
@@ -279,38 +291,97 @@ body.dark .meta-chip.total{background:rgba(16,185,129,.2)}
 body.dark .chip.active{background:rgba(99,102,241,.18)}
 
 /* =========================================================
-   CATEGORY DROPDOWN  ← NEW
+   CUSTOM CATEGORY DROPDOWN  ← جایگزین select بومی
    ========================================================= */
 .cat-select-wrap{position:relative;width:100%}
-.cat-select{
+
+.cat-select-trigger{
   width:100%;
-  padding:13px 14px 13px 40px;
+  padding:13px 14px;
   border-radius:13px;
   border:1.5px solid var(--border);
   background:var(--bg);
   font-size:14px;
   font-family:inherit;
   color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
   cursor:pointer;
-  outline:none;
-  appearance:none;
-  -webkit-appearance:none;
-  -moz-appearance:none;
   transition:border-color .2s,background .2s;
   text-align:right;
   line-height:1.4;
+  min-height:48px;
 }
-.cat-select:focus{border-color:var(--primary)}
-.cat-select:active{background:var(--border)}
-.cat-select-wrap::after{
-  content:'▾';
-  position:absolute;
-  left:14px;
-  top:50%;
-  transform:translateY(-50%);
-  pointer-events:none;
+.cat-select-trigger:focus,
+.cat-select-trigger.open{border-color:var(--primary)}
+.cat-select-trigger .arrow{
   color:var(--muted);
   font-size:11px;
+  transition:transform .2s;
+  flex-shrink:0;
+}
+.cat-select-trigger.open .arrow{transform:rotate(180deg)}
+.cat-select-trigger .label{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.cat-select-menu{
+  position:absolute;
+  top:calc(100% + 6px);
+  left:0;
+  right:0;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:13px;
+  box-shadow:0 10px 30px rgba(15,23,42,.18);
+  z-index:20;
+  max-height:260px;
+  overflow-y:auto;
+  padding:6px;
+  display:none;
+  animation:dropIn .15s ease;
+}
+body.dark .cat-select-menu{box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.cat-select-menu.open{display:block}
+@keyframes dropIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+.cat-select-option{
+  width:100%;
+  padding:10px 12px;
+  border-radius:9px;
+  font-size:13.5px;
+  font-family:inherit;
+  color:var(--text);
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  transition:background .12s;
+  text-align:right;
+  background:none;
+  border:0;
+  line-height:1.4;
+}
+.cat-select-option:active{background:var(--bg)}
+.cat-select-option.selected{
+  background:rgba(79,70,229,.12);
+  color:var(--primary);
+  font-weight:600;
+}
+body.dark .cat-select-option.selected{background:rgba(99,102,241,.2)}
+.cat-select-option .opt-icon{flex-shrink:0;font-size:15px}
+.cat-select-option .opt-name{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 /* =========================================================
@@ -451,7 +522,7 @@ body.dark .chip.active{background:rgba(99,102,241,.18)}
 .date-input{cursor:pointer}
 
 /* =========================================================
-   JALALI DATE PICKER  ← NEW
+   JALALI DATE PICKER
    ========================================================= */
 .date-picker-modal{
   z-index:150;
