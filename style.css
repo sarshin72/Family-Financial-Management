@@ -191,7 +191,7 @@ main{flex:1;padding:6px 14px calc(110px + var(--safe-b))}
 .tx-del:active{background:var(--red);color:#fff}
 
 /* =========================================================
-   SHOPPING  ← دکمه حذف SVG جمع‌وجور
+   SHOPPING
    ========================================================= */
 .shop-row{
   display:flex;align-items:flex-start;gap:10px;
@@ -246,7 +246,6 @@ body.dark .meta-chip.total{background:rgba(16,185,129,.2)}
 }
 .meta-chip.editable:active{background:rgba(79,70,229,.15)}
 
-/* ⬇️ دکمه حذف کاملاً جمع‌وجور — ۲۴px، SVG، بدون پس‌زمینه */
 .shop-del{
   width:24px;height:24px;
   padding:0;
@@ -291,7 +290,7 @@ body.dark .meta-chip.total{background:rgba(16,185,129,.2)}
 body.dark .chip.active{background:rgba(99,102,241,.18)}
 
 /* =========================================================
-   CUSTOM CATEGORY DROPDOWN  ← جایگزین select بومی
+   CUSTOM CATEGORY DROPDOWN
    ========================================================= */
 .cat-select-wrap{position:relative;width:100%}
 
