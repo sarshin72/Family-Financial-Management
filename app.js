@@ -783,7 +783,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۵.۵. حساب‌ها (Accounts) — درآمد/هزینهٔ هر عضو به‌صورت جداگانه
+     ۱۵.۵. حساب‌ها (Accounts) — بر اساس عضوِ ثبت‌شده (memberId)
      ========================================================= */
   let accFilter = 'me'; // 'me' یا شناسهٔ عضو
 
@@ -792,20 +792,28 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     renderAccounts();
   }
 
+  // پیدا کردن عضوی که نمایندهٔ کاربر جاری است (بر اساس نام = پیشوند ایمیل)
+  function getMyMember() {
+    const myNamePrefix = ((state.user && state.user.email) || '').split('@')[0].toLowerCase().trim();
+    if (!myNamePrefix) return null;
+    return state.config.members.find(m => (m.name || '').toLowerCase().trim() === myNamePrefix) || null;
+  }
+
   function getAccTransactions() {
     if (accFilter === 'me') {
-      // «من» = تراکنش‌هایی که خود این کاربر ثبت کرده
-      const myNamePrefix = (state.user && state.user.email || '').split('@')[0];
-      return state.transactions.filter(t =>
-        t.createdBy === state.user.id ||
-        (!t.createdBy && findMember(t.memberId)?.name === myNamePrefix)
-      );
+      // «من» = عضوی که نامش با پیشوند ایمیل کاربر جاری یکی است
+      const myMember = getMyMember();
+      if (!myMember) return [];
+      return state.transactions.filter(t => t.memberId === myMember.id);
     }
+    // سایر اعضا: دقیقاً بر اساس memberId (به نام چه کسی ثبت شده)
     return state.transactions.filter(t => t.memberId === accFilter);
   }
 
   function renderAccounts() {
     if (!$('accFilters')) return;
+
+    const myMember = getMyMember();
 
     // چیپ‌های فیلتر
     const chips = [
@@ -821,6 +829,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (accFilter !== 'me') {
       const m = findMember(accFilter);
       whoLabel = m ? 'حساب ' + m.name : 'حساب عضو';
+    } else if (myMember) {
+      whoLabel = 'حساب من (' + myMember.name + ')';
     }
     $('accWhoLabel').textContent = whoLabel;
 
@@ -838,6 +848,18 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     // لیست تراکنش‌ها
     const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
     $('accCount').textContent = sorted.length ? fmt(sorted.length) + ' مورد' : '';
+
+    // حالت خاص: تب «من» ولی عضوی با نام کاربر پیدا نشد
+    if (accFilter === 'me' && !myMember) {
+      const myNamePrefix = ((state.user && state.user.email) || '').split('@')[0];
+      $('accList').innerHTML = `<div class="empty">
+        <span class="em">👤</span>
+        عضوی با نام «<b>${esc(myNamePrefix)}</b>» در لیست اعضای خانواده نیست.<br>
+        <small>از تنظیمات، عضوی با همین نام اضافه کنید یا از تب‌های بالا یک عضو را انتخاب کنید.</small>
+      </div>`;
+      return;
+    }
+
     $('accList').innerHTML = sorted.length
       ? sorted.map(t => txRowHTML(t, false)).join('')
       : `<div class="empty"><span class="em">💼</span>تراکنشی برای این حساب ثبت نشده</div>`;
