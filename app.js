@@ -288,7 +288,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     state.transactions = (data || []).map(t => ({
       id: t.id, type: t.type, amount: Number(t.amount),
       catId: t.cat_id, memberId: t.member_id, date: t.date,
-      note: t.note || '', created: new Date(t.created_at).getTime()
+      note: t.note || '', created: new Date(t.created_at).getTime(),
+      createdBy: t.created_by || null
     }));
   }
 
@@ -336,6 +337,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'chat_messages', filter:`household_id=eq.${state.householdId}` },
           async (payload) => {
             await refreshChat();
+            // ⚠️ دکمهٔ چت از نویگیشن حذف شده؛ برای فعال‌سازی مجدد، بلوک زیر را از کامنت خارج کنید.
+            /*
             if ($('chatModal') && $('chatModal').classList.contains('open')) {
               renderChat();
               state.chatUnread = 0;
@@ -346,6 +349,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
               const short = preview.length > 30 ? preview.slice(0,30) + '…' : preview;
               toast(`${payload.new.sender_name}: ${short}`);
             }
+            */
           })
       .subscribe();
   }
@@ -362,6 +366,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     if (name === 'report') renderReport();
     if (name === 'settings') renderSettings();
     if (name === 'shopping') renderShopping();
+    if (name === 'accounts') renderAccounts();
   }
 
   function toggleTheme(){
@@ -486,7 +491,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۴. لیست خرید — با دکمه حذف SVG جمع‌وجور
+     ۱۴. لیست خرید
      ========================================================= */
   function renderShopping(){
     const list = state.shoppingList;
@@ -778,6 +783,67 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
+     ۱۵.۵. حساب‌ها (Accounts) — درآمد/هزینهٔ هر عضو به‌صورت جداگانه
+     ========================================================= */
+  let accFilter = 'me'; // 'me' یا شناسهٔ عضو
+
+  function setAccFilter(f) {
+    accFilter = f;
+    renderAccounts();
+  }
+
+  function getAccTransactions() {
+    if (accFilter === 'me') {
+      // «من» = تراکنش‌هایی که خود این کاربر ثبت کرده
+      const myNamePrefix = (state.user && state.user.email || '').split('@')[0];
+      return state.transactions.filter(t =>
+        t.createdBy === state.user.id ||
+        (!t.createdBy && findMember(t.memberId)?.name === myNamePrefix)
+      );
+    }
+    return state.transactions.filter(t => t.memberId === accFilter);
+  }
+
+  function renderAccounts() {
+    if (!$('accFilters')) return;
+
+    // چیپ‌های فیلتر
+    const chips = [
+      `<button class="chip${accFilter === 'me' ? ' active' : ''}" onclick="app.setAccFilter('me')">👤 من</button>`
+    ];
+    state.config.members.forEach(m => {
+      chips.push(`<button class="chip${accFilter === m.id ? ' active' : ''}" onclick="app.setAccFilter('${m.id}')">${esc(m.name)}</button>`);
+    });
+    $('accFilters').innerHTML = chips.join('');
+
+    // عنوان
+    let whoLabel = 'حساب من';
+    if (accFilter !== 'me') {
+      const m = findMember(accFilter);
+      whoLabel = m ? 'حساب ' + m.name : 'حساب عضو';
+    }
+    $('accWhoLabel').textContent = whoLabel;
+
+    // محاسبهٔ جمع‌ها
+    const list = getAccTransactions();
+    let inc = 0, exp = 0;
+    list.forEach(t => {
+      if (t.type === 'income') inc += t.amount;
+      else exp += t.amount;
+    });
+    $('accIncome').textContent = fmt(inc);
+    $('accExpense').textContent = fmt(exp);
+    $('accBalance').textContent = fmt(inc - exp);
+
+    // لیست تراکنش‌ها
+    const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+    $('accCount').textContent = sorted.length ? fmt(sorted.length) + ' مورد' : '';
+    $('accList').innerHTML = sorted.length
+      ? sorted.map(t => txRowHTML(t, false)).join('')
+      : `<div class="empty"><span class="em">💼</span>تراکنشی برای این حساب ثبت نشده</div>`;
+  }
+
+  /* =========================================================
      ۱۶. تنظیمات
      ========================================================= */
   function renderSettings(){
@@ -845,6 +911,102 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
+     ۱۶.۵. پشتیبان‌گیری JSON و خروجی اکسل
+     ========================================================= */
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function exportJSON() {
+    const data = {
+      app: 'مدیریت مالی خانواده',
+      exportedAt: new Date().toISOString(),
+      shareCode: state.shareCode,
+      config: state.config,
+      budget: state.budget,
+      transactions: state.transactions,
+      shoppingList: state.shoppingList,
+      messages: state.messages
+    };
+    const json = JSON.stringify(data, null, 2);
+    const dateStr = isoOf(new Date());
+    downloadBlob(new Blob([json], { type: 'application/json;charset=utf-8' }), `family-backup-${dateStr}.json`);
+    toast('پشتیبان JSON دانلود شد ✓');
+  }
+
+  function exportCSV(dateStr) {
+    let csv = '\uFEFF'; // BOM برای نمایش صحیح فارسی در Excel
+    csv += 'تاریخ,نوع,دسته,عضو,مبلغ,توضیحات\n';
+    state.transactions.forEach(t => {
+      const cat = findCat(t.type, t.catId);
+      const mem = findMember(t.memberId);
+      const note = (t.note || '').replace(/,/g, ' ');
+      csv += `${fmtJalali(t.date)},${t.type === 'income' ? 'درآمد' : 'هزینه'},${cat ? cat.name : ''},${mem ? mem.name : ''},${t.amount},${note}\n`;
+    });
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `family-transactions-${dateStr}.csv`);
+    toast('خروجی CSV دانلود شد ✓');
+  }
+
+  function exportExcel() {
+    const dateStr = isoOf(new Date());
+    if (typeof XLSX === 'undefined') {
+      exportCSV(dateStr); // fallback در صورت عدم دسترسی به CDN
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // شیت ۱: تراکنش‌ها
+    const txRows = state.transactions.map(t => {
+      const cat = findCat(t.type, t.catId);
+      const mem = findMember(t.memberId);
+      return {
+        'تاریخ': fmtJalali(t.date),
+        'نوع': t.type === 'income' ? 'درآمد' : 'هزینه',
+        'دسته': cat ? cat.name : '',
+        'عضو': mem ? mem.name : '',
+        'مبلغ (تومان)': t.amount,
+        'توضیحات': t.note || ''
+      };
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txRows.length ? txRows : [{'پیام':'تراکنشی ثبت نشده'}]), 'تراکنش‌ها');
+
+    // شیت ۲: لیست خرید
+    const shopRows = state.shoppingList.map(i => ({
+      'نام کالا': i.name,
+      'تعداد': i.qty,
+      'واحد': i.unit,
+      'قیمت واحد': i.price,
+      'جمع': i.qty * i.price,
+      'وضعیت': i.done ? 'خریداری شده' : 'در انتظار'
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopRows.length ? shopRows : [{'پیام':'لیست خالی'}]), 'لیست خرید');
+
+    // شیت ۳: خلاصهٔ اعضا
+    const summaryRows = state.config.members.map(m => {
+      let inc = 0, exp = 0;
+      state.transactions.forEach(t => {
+        if (t.memberId === m.id) {
+          if (t.type === 'income') inc += t.amount;
+          else exp += t.amount;
+        }
+      });
+      return { 'عضو': m.name, 'درآمد': inc, 'هزینه': exp, 'مانده': inc - exp };
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows.length ? summaryRows : [{'پیام':'عضوی نیست'}]), 'خلاصه اعضا');
+
+    XLSX.writeFile(wb, `family-budget-${dateStr}.xlsx`);
+    toast('خروجی اکسل دانلود شد ✓');
+  }
+
+  /* =========================================================
      ۱۷. کد اشتراک
      ========================================================= */
   async function copyShareCode(){
@@ -884,7 +1046,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
   }
 
   /* =========================================================
-     ۱۸. چت
+     ۱۸. چت (کد کامل حفظ شده — دسترسی از UI حذف شده)
      ========================================================= */
   function formatChatTime(iso) {
     const d = new Date(iso);
@@ -1118,7 +1280,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     $('btnTypeIncome').classList.toggle('active', !isExp);
   }
 
-  // ⬇️ دراپ‌داون اختصاصی — فونت و رنگ کاملاً تحت کنترل
   function renderCatChips(){
     const cats = state.config.categories[formType] || [];
     if (!cats.find(c => c.id === formCat)) formCat = cats[0]?.id || null;
@@ -1160,7 +1321,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpen = menu.classList.contains('open');
-      // بستن سایر منوها
       document.querySelectorAll('.cat-select-menu.open').forEach(m => {
         if (m !== menu) m.classList.remove('open');
       });
@@ -1231,7 +1391,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
      ۲۰. رندر کلی
      ========================================================= */
   function renderAll(){
-    renderHome(); renderTx(); renderReport(); renderShopping();
+    renderHome(); renderTx(); renderReport(); renderShopping(); renderAccounts();
     if ($('chatModal') && $('chatModal').classList.contains('open')) renderChat();
     updateChatBadge();
   }
@@ -1271,19 +1431,28 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
 
     $('addModal').addEventListener('click', e => { if (e.target === $('addModal')) closeAdd(); });
 
-    $('chatSendBtn').addEventListener('click', sendChatMessage);
-    $('chatInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
-    });
-    $('chatInput').addEventListener('input', e => {
-      e.target.style.height = 'auto';
-      e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
-    });
-    $('chatFileInput').addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (file) uploadChatImage(file);
-    });
-    $('chatModal').addEventListener('click', e => { if (e.target === $('chatModal')) closeChat(); });
+    // چت (اختیاری — عناصر همچنان در DOM هستند ولی دکمهٔ نمایش حذف شده)
+    const chatSendBtn = $('chatSendBtn');
+    if (chatSendBtn) chatSendBtn.addEventListener('click', sendChatMessage);
+    const chatInput = $('chatInput');
+    if (chatInput) {
+      chatInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+      });
+      chatInput.addEventListener('input', e => {
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+      });
+    }
+    const chatFileInput = $('chatFileInput');
+    if (chatFileInput) {
+      chatFileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) uploadChatImage(file);
+      });
+    }
+    const chatModal = $('chatModal');
+    if (chatModal) chatModal.addEventListener('click', e => { if (e.target === chatModal) closeChat(); });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
@@ -1316,7 +1485,11 @@ const SUPABASE_ANON_KEY = 'sb_publishable_D7F9DCtz3dCOkbNK7e7mLw_WENkjlNc';
     openChat, closeChat, sendChatMessage, uploadChatImage,
     openLightbox, closeLightbox,
     // تقویم شمسی
-    dpPrevMonth, dpNextMonth, dpSelectDay, dpSelectToday, closeDatePicker
+    dpPrevMonth, dpNextMonth, dpSelectDay, dpSelectToday, closeDatePicker,
+    // حساب‌ها
+    setAccFilter,
+    // پشتیبان‌گیری
+    exportJSON, exportExcel
   };
 
   /* =========================================================
