@@ -142,6 +142,23 @@
         </div>
       </section>
 
+      <!-- ACCOUNTS -->
+      <section id="screen-accounts" class="screen">
+        <div class="filterbar" id="accFilters"></div>
+        <div class="balance-card">
+          <div class="bal-label" id="accWhoLabel">حساب من</div>
+          <div class="bal-amount"><span id="accBalance">۰</span><small>تومان</small></div>
+          <div class="bal-sub">
+            <div><span class="dot g"></span> درآمد: <b id="accIncome">۰</b></div>
+            <div><span class="dot r"></span> هزینه: <b id="accExpense">۰</b></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">تراکنش‌ها <span class="muted" id="accCount"></span></div>
+          <div id="accList"></div>
+        </div>
+      </section>
+
       <!-- REPORT -->
       <section id="screen-report" class="screen">
         <div class="card">
@@ -211,6 +228,14 @@
             <button onclick="app.addCat('income')">+</button>
           </div>
         </div>
+        <div class="card">
+          <div class="card-title">پشتیبان‌گیری و خروجی</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:2;margin-bottom:10px">
+            خروجی کامل داده‌های خانوار (تراکنش‌ها، لیست خرید، اعضا، دسته‌بندی‌ها، بودجه).
+          </div>
+          <button class="set-btn" onclick="app.exportJSON()" style="margin-top:0">📥 دانلود پشتیبان JSON</button>
+          <button class="set-btn" onclick="app.exportExcel()" style="margin-top:8px">📊 خروجی اکسل (Excel)</button>
+        </div>
       </section>
     </main>
 
@@ -228,10 +253,13 @@
         <span>خرید</span>
       </button>
       <button class="fab" onclick="app.openAdd()">+</button>
-      <button class="nav-item" onclick="app.openChat()" style="position:relative">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>چت</span>
-        <span class="chat-badge" id="chatBadge" style="display:none"></span>
+      <button class="nav-item" data-nav="accounts" onclick="app.go('accounts')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="14" rx="2"/>
+          <path d="M3 10h18"/>
+          <circle cx="17" cy="15" r="1" fill="currentColor"/>
+        </svg>
+        <span>حساب‌ها</span>
       </button>
       <button class="nav-item" data-nav="report" onclick="app.go('report')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V11M12 21V4M20 21v-6"/></svg>
@@ -273,7 +301,7 @@
     </div>
   </div>
 
-  <!-- CHAT MODAL -->
+  <!-- CHAT MODAL (دسترسی از UI حذف شده — کد حفظ شده برای فعال‌سازی آینده) -->
   <div class="modal" id="chatModal">
     <div class="sheet chat-sheet">
       <div class="sheet-head">
@@ -299,6 +327,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
